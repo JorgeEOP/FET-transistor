@@ -1,0 +1,47 @@
+---
+System name: 2-TbPc-Antipar-16_per-9_0_CNT_Ohne_Metall-DZVP-SR-CDFT-Mg-C26-Mg6-C26-up-down
+Number of energy points : 1000
+Lower energy border : -0.5
+Upper energy border : 0.5
+Spin Polarized system : "yes"
+Name of the CP2K ao matrices: 2-TbPc-Antipar-9_0_CNT-CDFT.ao
+Name of the .out CP2K file : out.out
+Name of the .pdos alpha CP2K file : out.out 
+Name of the .pdos beta CP2K file : out.out
+Central system : 
+  - first atom : 109
+  - last atom : 694
+Leads : 
+  - first atom left Lead : 1
+  - last atom left Lead : 108
+  - first atom right Lead : 695
+  - last atom right Lead : 802
+Number of periods on the Leads : 3
+Total number of atoms in the system : 802
+Small imaginary part : 0.001
+Path to CP2K ao matrices : "CP2Kfiles/2-TbPc-Antipar-16_per-9_0_CNT_Ohne_Metall-DZVP-SR-CDFT-Mg6-C26-Mg6-C26-up-down/"
+Path to the system 14-matrices : "system_14_matrices/2-TbPc-Antipar-16_per-9_0_CNT_Ohne_Metall-DZVP-SR-CDFT-Mg6-C26-Mg6-C26-up-down/Input"
+Path of output : "Output/2-TbPc-Antipar-16_per-9_0_CNT_Ohne_Metall-DZVP-SR-CDFT-Mg6-C26-Mg6-C26-up-down-Fortran-Vg0"
+Coulomb blockade : "no"
+Coulomb energy in eVs : 0.020
+Density matrix re-scaling (alpha) : 1
+Density matrix re-scaling (beta) : 1
+Restart calculation : "No"
+Gate correction to central Hamiltonian: "yes"
+###
+Differential conductance calculation: "no"
+Number of sd-voltage points: 400
+Number of gs-voltage points: 40
+Lower source-drain voltage: -0.05
+Upper source-drain voltage: 0.05
+Lower gate-source voltage: -1.20
+Upper gate-source voltage: -1.00
+Temperature in Kelvin: 1.0
+###
+Projected DOS: "no"
+Molecule 1: CNT
+Molecule 2: 2SMM
+System1 first atom: 1
+System1 last atom: 802
+System2 first atom: 145
+System2 last atom: 370
