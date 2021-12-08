@@ -280,7 +280,9 @@ class fourteen_matrices_spin:
                     tempE      = endE - startE
                     ave_timeE += tempE
 
-                    print (iE, 5*'  ', int(tempE % 60), dos, trans, flush=True, end="\n")
+                    print ("{: 05.3f} {} {: 5.3f}".format(energy.real, 5*'  ',
+                                                          int(tempE % 60)),
+                           flush=True, end="\n")
 
                     f1.write("{: 09.7f} {: 09.6f} {: 9.6f}".\
                              format(energy.real, dos[iE], trans[iE]))
@@ -1195,7 +1197,7 @@ class fourteen_matrices_spin:
                 dost2print = df(data=dost2print, columns=["Dos(E)", "T(E)"])
                 dost2print.insert(loc=0, column="Gate Voltage", value=vg2print)
                 dost2print.insert(loc=1, column="Energy", value=E.real)
-                print (dost2print)
+                #print (dost2print)
 
                 fmt_01 = "% -05.7f" "% -05.7f" "% -05.7f" "% -05.7f"
                 np.savetxt(f1, dost2print, delimiter='  ', fmt=fmt_01)

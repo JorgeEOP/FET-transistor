@@ -365,22 +365,6 @@ class fourteen_matrices_spin:
                     else:
                         pass
 
-                    #Vgm_HL  = SL  * Vg   
-                    #Vgm_HR  = SR  * Vg 
-                    #Vgm_VCL = SCL * Vg 
-                    #Vgm_VCR = SCR * Vg 
-                    #Vgm_TL  = STL * Vg 
-                    #Vgm_TR  = STR * Vg 
-                    #Vgm_HC  = SC  * Vg
-
-                    #HL  = HL  - Vgm_HL
-                    #HR  = HR  - Vgm_HR
-                    #VCL = VCL - Vgm_VCL
-                    #VCR = VCR - Vgm_VCR
-                    #TL  = TL  - Vgm_TL
-                    #TR  = TR  - Vgm_TR
-                    #HC  = HC  - Vgm_HC
-                    
                     dos   = np.zeros(self.NE)
                     trans = np.zeros(self.NE)
                     rank_string = str(rank)
@@ -394,11 +378,11 @@ class fourteen_matrices_spin:
                     if rank == 0:
                         dosT = {}
                         dosT[0] = np.array(list(zip(dos, trans)))
-                        print (dosT)
+                        #print (dosT)
 
                         for idosT, irank in enumerate(all_extra_ranks):
                             dosT[irank] = comm.recv(source=irank, tag=irank)
-                        print(dosT)
+                        #print(dosT)
 
                         comm.Barrier()
 
@@ -1735,9 +1719,7 @@ class FET_DOST_Spin_fort:
             name = MPI.Get_processor_name()
 
             print ("\n")
-
             print ("Number of MPI processes: ", size, flush=True, end="\n")
-
             print ("\n")
             
             if not os.path.exists(path):
@@ -1753,12 +1735,14 @@ class FET_DOST_Spin_fort:
             starts = [sum(counts[:p])   for p in range(size)]
             ends   = [sum(counts[:p+1]) for p in range(size)]
 
+            # Energie Stuecke pro Rank
             Energies_p_rank = [Energies[starts[p]:ends[p]] for p in range(size)]
 
         else:
             name     = MPI.Get_processor_name()
             Energies = None
-
+        
+        # Schick jedes Stueck nach dem Rank
         Energies_p_rank = comm.scatter(Energies_p_rank, root=0)
 
         H_all, S_all = self.load_matrices_h5_sp()
@@ -1783,17 +1767,41 @@ class FET_DOST_Spin_fort:
                     VCR = np.array(H_all.get("VCR-"+spin))
                     SCR = np.array(S_all.get("SCR"))
                     HC  = np.array(H_all.get("HC-"+spin))
+                    ### Hack_2 ###
+                    #HC_hack  = np.array(H_all.get("HC-"+spin))
+                    ############
                     SC  = np.array(S_all.get("SC"))
-                    
+
                     Ef       = self.load_FermiE()
                     Ef_alpha = Ef[0]
                     Ef_beta  = Ef[1]
                     Ef       = (Ef_alpha + Ef_beta)/2
 
                     dimC = HC.shape[0]
+                    ### Hack_2 ###
+                    #dimC = HC_hack.shape[0]
+                    ##############
+
+                    f2 = open(path+"/energies-"+spin+"-sp-g.out", "w+")
 
                     with open(path+"/out-"+spin+"-sp-g.out", "w+") as f1:
                         for ivg, Vg in enumerate(Vgates):
+
+                            ### Hack_2 (t_alpha Oberflaeche Darstellung) ###
+                            #HC = HC_hack.copy()
+                            #ts = Vg
+
+                            #HC[8][0]  = HC[8][0]  + Vg
+                            #HC[0][8]  = HC[0][8]  + Vg
+                            #HC[10][2] = HC[10][2] + Vg
+                            #HC[2][10] = HC[2][10] + Vg
+                            #HC[12][4] = HC[12][4] + Vg
+                            #HC[4][12] = HC[4][12] + Vg
+                            #HC[14][6] = HC[14][6] + Vg
+                            #HC[6][14] = HC[6][14] + Vg
+                            #Vg = 0
+                            #############################################
+
                             if rank == 0:
                                 print ("Gatting applied to central Hamiltonian",
                                        flush=True, end="\n")
@@ -1805,14 +1813,20 @@ class FET_DOST_Spin_fort:
                                 homos_lumos, vHCg_ortho, HCg_diag = \
                                        self.energy_levs_shifted(HC, SC, Vg)
 
-                                f2 = open(path+"/energies-"+spin+"-sp-g.out",
-                                        "w+")
+                                ## Hack! ##
+                                #homos_lumos, vHCg_ortho, HCg_diag = \
+                                #       self.energy_levs_shifted_hack2(HC, SC, Vg)
+                                ###########
+
+                                homos_lumos_HLR, vHL_ortho, HL_diag = \
+                                       self.energy_levs_shifted(HL, SL, 0)
 
                                 comm.Barrier()
                             else:
                                 comm.Barrier()
                                 pass
 
+                            ### Bei hack_1, kommentieren ###
                             Vgm_HC  = SC  * Vg
                             Vgm_VCL = SCL * Vg 
                             Vgm_VCR = SCR * Vg 
@@ -1820,6 +1834,27 @@ class FET_DOST_Spin_fort:
                             HCg  = HC  - Vgm_HC
                             VCLg = VCL - Vgm_VCL
                             VCRg = VCR - Vgm_VCR
+                            ##############################
+
+                            ######## Hack_1 #######
+                            #if spin == "alpha":
+                            #    SC_hack = np.zeros(shape=(HC.shape[0],HC.shape[0]))
+                            #    #Kette
+                            #    SC_hack[0][0] = 1
+                            #    SC_hack[2][2] = 1
+                            #    SC_hack[4][4] = 1
+                            #    SC_hack[6][6] = 1
+                            #    #SMMs
+                            #    #SC_hack[8][8]   = 1
+                            #    #SC_hack[10][10] = 1
+                            #    #SC_hack[12][12] = 1
+                            #    #SC_hack[14][14] = 1
+                            #    HCg  = HC - (Vg * SC_hack)
+                            #else:
+                            #    HCg  = HC
+                            #VCLg = VCL
+                            #VCRg = VCR
+                            #####################
 
                             dos   = np.zeros(Energies_p_rank.size)
                             trans = np.zeros(Energies_p_rank.size)
@@ -1862,15 +1897,6 @@ class FET_DOST_Spin_fort:
                                 dos[iE]   = dosf
                                 trans[iE] = transf
 
-                                #if rank == 2:
-                                #    endE       = time.time()
-                                #    tempE      = endE - startE
-                                #    ave_timeE += tempE
-                                #    print (iE, 5*'  ', "Time p.e.p:", int(tempE % 60),
-                                #           flush=True, end="\n")
-                                #else:
-                                #    pass
-
                             #ave_houE = (ave_timeE/Energies_p_rank.size) // 3600
                             #ave_minE = (ave_timeE/Energies_p_rank.size) // 60 \
                             #           - ave_houE*60
@@ -1878,8 +1904,8 @@ class FET_DOST_Spin_fort:
                             #           - 60*ave_minE
                             #info04   = ("Average time per energy point: {} "\
                             #            "{:.0f}:{:.0f}:{:.1f} h/m/s")
-                            #print (info04.format(5*' ', ave_houE , ave_minE, ave_secE,
-                            #       flush=True, end='\n'))
+                            #print (info04.format(5*' ', ave_houE , ave_minE,
+                            #ave_secE, flush=True, end='\n'))
                             #print (moprint.iprint_line(), flush=True, end='\n')
 
                             #print ("Reached barrier 0", flush=True, end='\n')
@@ -1903,8 +1929,13 @@ class FET_DOST_Spin_fort:
                                         elif dosT[i] != []:
                                             dost2print = np.concatenate((dost2print,\
                                                                   np.array(dosT[i])))
-
+                                ### Bei Hack_2 kommentieren ###
                                 vg2print = Vg * np.ones((self.NE))
+
+                                ### Hack_2 ###
+                                #vg2print = ts * np.ones((self.NE))
+                                ##############
+                        
                                 dost2print = df(data=dost2print, \
                                                 columns=["Dos(E)", "T(E)"])
                                 dost2print.insert(loc=0, column="Gate voltage", \
@@ -1920,11 +1951,16 @@ class FET_DOST_Spin_fort:
                                 f1.flush()
 
                                 if rank == 0:
-                                    homos_lumos = np.concatenate((homos_lumos,\
-                                                  np.array(Vg * np.ones(dimC))))
+                                    eigener2printHL = df(data=homos_lumos_HLR)
+                                    eigener2print   = df(data=homos_lumos)
+
+                                    eigener2print.insert(loc=0, column="Gate Voltage",
+                                                         value=np.array(Vg * np.ones((dimC)).T))
+                                    eigener2print = pd.concat([eigener2print,eigener2printHL],
+                                    ignore_index=True, axis=1).fillna(0)
+                                    #print (eigener2print)
                                         
-                                    eigener2print = df(data=homos_lumos)
-                                    fmt_02 = "% -05.7f", "% -05.7f"
+                                    fmt_02 = "% -05.7f", "% -05.7f", "% -05.7f"
                                     np.savetxt(f2, eigener2print, delimiter="  ",
                                                fmt=fmt_02)
 
@@ -2036,11 +2072,11 @@ class FET_DOST_Spin_fort:
                     if rank == 0:
                         dosT = {}
                         dosT[0] = np.array(list(zip(dos, trans)))
-                        print (dosT)
+                        #print (dosT)
 
                         for idosT, irank in enumerate(all_extra_ranks):
                             dosT[irank] = comm.recv(source=irank, tag=irank)
-                        print(dosT)
+                        #print(dosT)
 
                         comm.Barrier()
 
@@ -2050,7 +2086,7 @@ class FET_DOST_Spin_fort:
                             else:
                                 dost2print = np.concatenate((dost2print,\
                                                             np.array(dosT[i])))
-                        
+
                         dost2print = df(data=dost2print, \
                                         columns=["Dos(E)", "T(E)"])
                         dost2print.insert(loc=0, column="Energy", \
@@ -2134,6 +2170,65 @@ class FET_DOST_Spin_fort:
                        ignore_index=True)).rename(columns=\
                        {0: "energy_levels"})
         #occ_homlum  = pd.concat([n_occ,homos_lumos], axis=1)
+
+        HCg_diag = np.diag(wHCg_ortho)
+
+        return homos_lumos, vHCg_ortho, HCg_diag
+
+    def energy_levs_shifted_hack2(self, HC, SC, Vg):
+        # Obtain the X_s matrix that fullfils: 
+        # X_s^{dagger} S_overlap X_s = 1
+        Xsmatrix = self.orthogonalization_basis(SC)
+
+        # Obtain the matrices: s and U for the orthogonalization procedure
+        SC = np.zeros(shape=(HC.shape[0],HC.shape[0]))
+        # Kette
+        SC[0][0] = 1
+        SC[2][2] = 1
+        SC[4][4] = 1
+        SC[6][6] = 1
+        # SMMs
+        #SC[8][8]   = 1
+        #SC[10][10] = 1
+        #SC[12][12] = 1
+        #SC[14][14] = 1
+        HCg = HC - (Vg * SC)
+        #print ('Zentinel: ', SC[4][4])
+        #print ('FUSE: ', HCg[4][4])
+        #print ('Zentinel: ', SC[8][8])
+        #print ('FUSE: ', HCg[8][8], HCg[12][12])
+        #print ('FUSE: ', HCg[8][8])
+
+        # Transform HC using Xsmatrix
+        HCg_ortho = np.matrix.getH(Xsmatrix) @ HCg @ Xsmatrix
+
+        # Get eigenvalues of HC_ortho (HOMO-LUMOS)
+        wHCg_ortho, vHCg_ortho = scipy.linalg.eigh(HCg_ortho)
+        homos_lumos = (df(wHCg_ortho.real).sort_values(by=0,\
+                       ignore_index=True)).rename(columns=\
+                       {0: "energy_levels"})
+        #occ_homlum  = pd.concat([n_occ,homos_lumos], axis=1)
+
+        HCg_diag = np.diag(wHCg_ortho)
+
+        return homos_lumos, vHCg_ortho, HCg_diag
+
+    # Hack: print energy levels of the decorated Hamiltonian:
+    # HCg - sigmaL - sigmaR 
+    def energy_levs_shifted_hack(self, HCg, SC, sigmaL, sigmaR):
+        Xsmatrix = self.orthogonalization_basis(SC)
+
+        # decorated HC
+        HCg_dec = HCg - sigmaL - sigmaR
+
+        # Transform HC using Xsmatrix
+        HCg_ortho = np.matrix.getH(Xsmatrix) @ HCg_dec @ Xsmatrix
+
+        # Get eigenvalues of HC_ortho (HOMO-LUMOS)
+        wHCg_ortho, vHCg_ortho = scipy.linalg.eigh(HCg_ortho)
+        homos_lumos = (df(wHCg_ortho.real).sort_values(by=0,\
+                       ignore_index=True)).rename(columns=\
+                       {0: "energy_levels"})
 
         HCg_diag = np.diag(wHCg_ortho)
 

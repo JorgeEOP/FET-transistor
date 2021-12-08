@@ -7,10 +7,13 @@ import modules.mo as mo
 import pandas as pd
 import numpy as np
 import decimal
+import shutil
 import math 
 import time 
 import sys
+import re
 import os
+from mpi4py import MPI
 from pandas import DataFrame as df
 from functools import partial
 from mpmath import mp
@@ -212,7 +215,7 @@ class iv_characteristics:
                 if self.gate_correction in ["No", "no", "N", "n"]:
                     for spin in ["alpha","beta"]:
                         # Read out the energies and transmission values
-                        f2 = mo.read_files(path+"/out-"+spin+"-sp-g-1eV.out", 0, 2, 0)
+                        f2 = mo.read_files(path+"/out-"+spin+"-sp-g.out", 0, 2, 0)
                         if spin == "alpha":
                             transmission_alpha = f2[2]
                         if spin == "beta":
@@ -310,7 +313,7 @@ class iv_characteristics:
                     for spin in ["alpha","beta"]:
                         # Read out the gate voltages, energies and transmission 
                         # values
-                        f2 = mo.read_files(path+"/out-"+spin+"-sp-g-1eV.out",
+                        f2 = mo.read_files(path+"/out-"+spin+"-sp-g.out",
                                            0, 3, 0)
                         if spin == "alpha":
                             transmission_alpha_sp = f2[3]
@@ -410,6 +413,235 @@ class iv_characteristics:
                     print ("Option not recognized")
                     sys.exit()
 
+    def iv_curves_hack_intnano(self):
+        espace = ' '
+
+        VSD = np.linspace(self.Vsd_a,self.Vsd_b,self.NVsd,dtype=float)
+        
+        # Units eV,s
+        e_char = phys.elementary_charge
+        hbar   = phys.physical_constants["Planck constant over 2 pi in eV s"][0]
+        Planck = phys.physical_constants["Planck constant in eV s"][0]
+        kB     = phys.physical_constants["Boltzmann constant in eV/K"][0]
+        G0     = phys.physical_constants["conductance quantum"][0]
+        # Electrochemical potential in the left electrode
+        mu = 0
+        # Temperature in Kelvin
+        temp    = self.temp 
+        tempstr = str(temp)
+        
+        if self.Spin in ["Yes","yes","Y","y"]:
+            # Conductance and IV maps
+            if self.G_calc in ["Yes", "yes", "Y", "y"]:
+                if self.gate_correction in ["Yes", "yes", "Y", "y"]:
+                    comm = MPI.COMM_WORLD
+                    size = comm.Get_size()
+                    rank = comm.Get_rank()
+
+                    all_extra_ranks = [i+1 for i in range(size-1)]
+                    VG_p_rank  = []
+                    E = []
+
+                    if rank == 0:
+                        info00 = ("Current Volt and differential conductance calculation.\n"
+                                  "NEGF+DFT\nSystem name: {}")
+                        print (moprint.ibordered_title(info00.format(self.Sname)),
+                               flush=True, end='\n')
+
+                        info01 = ("Electron charge: {: .9e}\n"
+                                  "hbar (eV*s): {: .9e}\n"
+                                  "Boltzmann constant (eV/K): {: .9e}\n"
+                                  "Planck constant (eV*s): {: .9e}\n"
+                                  "Quantum conductance (S): {: .9e}")
+                        print (moprint.ibordered(info01.format(e_char, hbar, kB, Planck,G0)),
+                               flush=True, end='\n')
+
+                        #print ('Size: ', size, 'Rank: ', rank)
+
+                        if not os.path.exists(self.path_out):
+                            os.makedirs(self.path_out)
+                        else:
+                            pass
+
+                        if not os.path.exists(os.path.join(self.path_out, 'tmp_G')):
+                            os.makedirs(os.path.join(self.path_out, 'tmp_G'))
+                        else:
+                            pass
+                    else:
+                        pass
+
+                    path   = self.path_out
+                    path_G = os.path.join(self.path_out, 'tmp_G')
+
+                    for spin in ["alpha","beta"]:
+                        # Read out the energies and transmission values
+                        f2 = mo.read_files(path+"/out-"+spin+"-sp-g.out",
+                                       0, 3, 0)
+                        if spin == "alpha":
+                            transmission_alpha_sp = f2[3]
+                        elif spin == "beta":
+                            transmission_beta_sp = f2[3]
+
+                        evf = f2[1]
+                        E   = []
+                        for j in range(len(evf)):
+                            if j == 0:
+                                E.append(evf[j])
+                            else:
+                                if evf[j] in E:
+                                    continue
+                                else:
+                                    E.append(evf[j])
+                        E = np.asarray(E, dtype=float)
+                    transmission_tot_sp = transmission_alpha_sp\
+                                          + transmission_beta_sp
+
+                    if rank == 0:
+                        #for spin in ["alpha","beta"]:
+                        # Read out the gate voltages, energies and transmission 
+                        # values
+                        f2 = mo.read_files(path+"/out-"+spin+"-sp-g.out",
+                                           0, 3, 0)
+
+                        # Get just the non-repeated elements of Gate voltages...
+                        vgvf = f2[0]
+                        VG   = []
+                        for i in range(len(vgvf)):
+                            if i == 0:
+                                VG.append(vgvf[i])
+                            else:
+                                if vgvf[i] == vgvf[i-1]:
+                                    continue
+                                else:
+                                    VG.append(vgvf[i])
+                        VG = np.asarray(VG, dtype=float)
+
+                        #VG_i  = np.linspace(VG[0],
+                        #                    VG[-1],
+                        #                    len(VG),
+                        #                    dtype=float)
+
+                        perrank, resperrank = divmod(VG.size, size)
+                        counts = [perrank + 1 if p < resperrank else perrank for p in\
+                                  range(size)]
+
+                        starts = [sum(counts[:p])   for p in range(size)]
+                        ends   = [sum(counts[:p+1]) for p in range(size)]
+
+                        VG_p_rank = [VG[starts[p]:ends[p]] for p in range(size)]
+
+                    else:
+                        name = MPI.Get_processor_name()
+                        #VG_i = None
+
+                    # Schick alle die VG_p_rank Teile zum ranks()
+                    VG_p_rank = comm.scatter(VG_p_rank, root = 0)
+
+                    landau_sp     = np.zeros( len(E) )
+                    der_landau_sp = np.zeros( len(E) )
+
+                    f1 = open(path_G + "/Conductance_sp-g_r" + str(rank) + ".out","+w")
+
+                    #print ("Rank {}, Vg_p_rank {} ".format(rank, len(VG_p_rank)))
+
+                    for ivg, vg in enumerate(VG_p_rank):
+                        #voll_start_T = ( rank ) * len( VG_p_rank ) * len( E )
+                        #voll_end_T = ( rank + 1 ) * len( VG_p_rank ) * len( E )
+                        voll_start_T = ( rank ) * len( VG_p_rank ) * len( E )
+                        voll_end_T   = ( rank + 1 ) * len( VG_p_rank ) * len( E )
+
+                        # Chunks of Transmission per gate Voltage
+                        start_T = voll_start_T + ivg * (len(E) - 1) + ivg 
+                        #end_T   = voll_start_T + (ivg + 1) * len(E)
+                        #start_T = voll_start_T
+                        end_T   = voll_start_T + (ivg + 1) * len(E)
+
+                        print ('Rank: {}, Start: {}, End: {} \n'.format(rank, start_T, end_T))
+
+                        #if rank == 0:
+                        #    print (df(transmission_tot_sp))
+                        #else:
+                        #    pass
+
+                        Trans_vg = np.asarray(transmission_tot_sp[start_T:end_T])
+                        
+                        #print (df(Trans_vg))
+
+                        print ('Rank: {}, {}'.format(rank, Trans_vg))
+                        #sys.exit()
+
+                        inter_trans = mo.inter_func(E, Trans_vg)
+
+                        if rank == 0:
+                            info02 = ("Rank {}, ivg: {} from nvg: {}\n"
+                                      "Gate Voltage(V): {: .8f}") 
+                            print (moprint.ibordered(info02.format(rank,
+                                                                   ivg,
+                                                                   len(VG_p_rank),
+                                                                   vg
+                                                                  )
+                                                    ), flush=True, end='\n')
+                            print (moprint.iprint_line(), flush=True, end='\n')
+                        else:
+                            pass
+
+                        for ivsd, vsd in enumerate(VSD):
+                            # Integration using integrate.quad
+                            int_landau = lambda x,a,b,c,d: inter_trans(x)\
+                                     *((1./(np.exp(x-(a+d/2.))**(1./(b*c))+1.))\
+                                     -(1./(np.exp(x-(a-d/2.))**(1./(b*c))+1.))) 
+                            
+                            int_der_landau = lambda x,a,b,c,d: inter_trans(x)\
+                                                    * 0.5 * (1./(2.*b*c))\
+                                                    * (1./(1.+mp.cosh((x\
+                                                    - (a+d/2.))/(b*c)))\
+                                                    + 1./(1.+mp.cosh((x\
+                                                    - (a-d/2.))/(b*c))))
+
+                            I, err_I = integrate.quad(int_landau,np.float64(E[0]),
+                                                      np.float64(E[len(E)-1]),\
+                                                      args=(mu,kB,temp,vsd,),\
+                                                      limit=80,epsabs=0)
+                            G_cond, G_err = integrate.quad(int_der_landau,
+                                                     np.float64(E[0]),\
+                                                     np.float64(E[len(E)-1]),\
+                                                     args=(mu, kB, temp, vsd,),\
+                                                     limit=80, epsabs=0)
+                            I      = G0 * I  
+                            G_cond = G0 * G_cond
+                            
+                            f1.write("{: .10f} {: .10f} {: .14f} {: .14f} "
+                                     "{: .14f}\n".format(vg, vsd, abs(I),
+                                                         G_cond, I))
+                            f1.flush()
+                        f1.write("\n")
+                        print (moprint.iprint_line())
+                        print ("\n",flush=True,end='\n')
+                    f1.close()
+                    comm.Barrier()
+
+                    if rank == 0:
+                        path_G_list = os.listdir(path_G)  
+                        path_G_list.sort(key = lambda f: int(re.sub('\D', '', f)))
+                        with open(os.path.join(path, 'Conductance_sp-g.out'), 'w+') as stream_out:
+                            for datei in path_G_list:
+                                with open(os.path.join(path_G, datei)) as stream_in:
+                                    stream_out.write(stream_in.read())
+                        shutil.rmtree(path_G)
+                    else:
+                        pass
+
+                else:
+                    print ("Gating option not recognized")
+                    sys.exit()
+
+            else:
+                print ("G option not recognized")
+                sys.exit()
+
+        else:
+            print ("Spin option not recognized")
+
 
     def iv_curves_cb(self):
         info00 = ("Current Volt and differential conductance calculation.\n"
@@ -494,8 +726,8 @@ class iv_characteristics:
 
             f1 = open(path+"/Conductance_cb.out","+w")
             f1.write("# Temperature[K]: " + tempstr + "\n")
-            f1.write("# Vg" + 12*espace + "Vsd" + 11*espace + "|I|" + 
-                     15*espace + "Conductance" + 7*espace + "I" + "\n")
+            f1.write("# Vg" + 6*espace + "Vsd" + 11*espace + "|I|" + 
+                     10*espace + "Conductance" + 7*espace + "I" + "\n")
 
             for ivg, vg in enumerate(VG):
                 # Chunks of Transmission per gate Voltage
@@ -520,30 +752,43 @@ class iv_characteristics:
 
                 print ("ivsd" + 7 * ' ' + 'Source-Drain Voltage(V)',flush=True,end='\n')
                 print (moprint.iprint_line())
+
+                # Integration using integrate.quad
+                int_landau = lambda x,a,b,c,d: inter_trans(x) \
+                             *((1./(np.exp(x-(a+d/2.))**(1./(b*c))+1.)) \
+                             -(1./(np.exp(x-(a-d/2.))**(1./(b*c))+1.)) ) 
+                
+                int_der_landau = lambda x,a,b,c,d: inter_trans(x) \
+                                        * 0.5 * (1./(2.*b*c)) \
+                                        * (1./(1.+mp.cosh((x \
+                                        - (a+d/2.))/(b*c))) \
+                                        + 1./(1.+mp.cosh((x \
+                                        - (a-d/2.))/(b*c))))
+
                 for ivsd, vsd in enumerate(VSD):
                     info03 = ("{:2d} {:7} {: .8f}") 
                     print (info03.format(ivsd, ' ', vsd), flush=True, end='\n')
-                    # Integration using integrate.quad
-                    int_landau = lambda x,a,b,c,d: inter_trans(x) \
-                                 *((1./(np.exp(x-(a+d/2.))**(1./(b*c))+1.)) \
-                                 -(1./(np.exp(x-(a-d/2.))**(1./(b*c))+1.)) ) 
-                    
-                    int_der_landau = lambda x,a,b,c,d: inter_trans(x) \
-                                            * 0.5 * (1./(2.*b*c)) \
-                                            * (1./(1.+mp.cosh((x \
-                                            - (a+d/2.))/(b*c))) \
-                                            + 1./(1.+mp.cosh((x \
-                                            - (a-d/2.))/(b*c))))
 
                     I, err_I = integrate.quad(int_landau,np.float64(E[0]),
                                               np.float64(E[len(E)-1]), \
                                               args=(mu,kB,temp,vsd,), \
                                               limit=80,epsabs=0)
+
                     G_cond, G_err = integrate.quad(int_der_landau,
                                                    np.float64(E[0]), \
                                                    np.float64(E[len(E)-1]), \
                                                    args=(mu, kB, temp, vsd,), \
                                                    limit=80, epsabs=0)
+                    #I, err_I = integrate.quad(int_landau,np.float64(-0.5),
+                    #                          np.float64(0.5), \
+                    #                          args=(mu,kB,temp,vsd,), \
+                    #                          limit=80,epsabs=0)
+
+                    #G_cond, G_err = integrate.quad(int_der_landau,
+                    #                               np.float64(-0.5), \
+                    #                               np.float64(0.5), \
+                    #                               args=(mu, kB, temp, vsd,), \
+                    #                               limit=80, epsabs=0)
                     I      = G0 * I  
                     G_cond = G0 * G_cond
                     
